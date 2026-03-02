@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * Configuration properties for the OMDb API integration.
+ * Configuration properties for the OMDb API.
  */
 @Validated
 @ConfigurationProperties(prefix = "omdb.api")

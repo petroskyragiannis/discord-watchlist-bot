@@ -3,39 +3,42 @@ package com.petroskyragiannis.tainia_bot.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestTemplate;
+import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.resources.ConnectionProvider;
+import reactor.netty.http.client.HttpClient;
+
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 /**
- * Spring configuration for HTTP client infrastructure.
- * <p>
- * This configuration creates a {@link RestTemplate} bean configured
- * with timeout values provided via {@link HttpClientProperties}.
- * </p>
+ * HTTP client configuration.
  */
 @Configuration
 @EnableConfigurationProperties(HttpClientProperties.class)
 public class HttpClientConfig {
 
     /**
-     * Creates a {@link RestTemplate} configured with connection and read timeouts.
-     *
-     * <p>
-     * Timeout values are externalized and validated via
-     * {@link HttpClientProperties}.
-     * </p>
-     *
-     * @param properties HTTP client timeout configuration
-     * @return configured {@link RestTemplate} instance
+     * Creates a {@link WebClient} configured with timeouts.
      */
     @Bean
-    public RestTemplate restTemplate(HttpClientProperties properties) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+    public WebClient webClient(HttpClientProperties properties) {
+        ConnectionProvider connectionProvider = ConnectionProvider.builder("default")
+                .pendingAcquireTimeout(Duration.ofMillis(properties.getConnectionRequestTimeoutMs()))
+                .build();
 
-        factory.setConnectTimeout(properties.getConnectTimeoutMs());
-        factory.setReadTimeout(properties.getReadTimeoutMs());
+        HttpClient httpClient = HttpClient.create(connectionProvider)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, properties.getConnectTimeoutMs())
+                .responseTimeout(Duration.ofMillis(properties.getReadTimeoutMs()))
+                .doOnConnected(connection -> connection.addHandlerLast(
+                        new ReadTimeoutHandler(properties.getReadTimeoutMs(), TimeUnit.MILLISECONDS)
+                ));
 
-        return new RestTemplate(factory);
+        return WebClient.builder()
+                .clientConnector(new ReactorClientHttpConnector(httpClient))
+                .build();
     }
 
 }

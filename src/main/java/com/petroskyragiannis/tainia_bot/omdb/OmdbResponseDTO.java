@@ -4,12 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Data Transfer Object representing a response from the OMDb API.
- *
- * <p>
- * This class maps the raw JSON payload returned by OMDb into a Java object.
- * All fields are kept as strings to preserve the original API representation.
- * </p>
+ * DTO mapping the OMDb API response payload.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class OmdbResponseDTO {

@@ -3,26 +3,16 @@ package com.petroskyragiannis.tainia_bot.omdb;
 import com.petroskyragiannis.tainia_bot.config.OmdbProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientException;
 import org.springframework.web.util.UriComponentsBuilder;
+import reactor.core.publisher.Mono;
 
 import java.net.URI;
 
 /**
- * Client responsible for communicating with the OMDb API.
- *
- * <p>
- * This class handles HTTP request construction, execution, and
- * protocol-level error handling for OMDb interactions.
- * </p>
- *
- * <p>
- * It translates external API failures into OMDb-specific exceptions
- * that can be handled by higher layers.
- * </p>
+ * Reactive client for the OMDb API.
  */
 @Component
 public class OmdbClient {
@@ -32,54 +22,52 @@ public class OmdbClient {
     private static final String QUERY_PARAM_API_KEY = "apikey";
     private static final String QUERY_PARAM_TITLE = "t";
 
-    private final RestTemplate restTemplate;    // TODO: Migrate to WebClient
+    private final WebClient webClient;
     private final OmdbProperties properties;
 
-    public OmdbClient(RestTemplate restTemplate, OmdbProperties properties) {
-        this.restTemplate = restTemplate;
+    public OmdbClient(WebClient webClient, OmdbProperties properties) {
+        this.webClient = webClient;
         this.properties = properties;
     }
 
     /**
      * Fetches a movie or series from OMDb by title.
-     *
-     * @param title movie or series title
-     * @return raw OMDb response DTO
-     * @throws OmdbException if no matching title exists or a technical error occurs
      */
-    public OmdbResponseDTO fetchByTitle(String title) {
-        try {
-            URI uri = UriComponentsBuilder
-                    .fromUriString(properties.getBaseUrl())
-                    .queryParam(QUERY_PARAM_API_KEY, properties.getKey())
-                    .queryParam(QUERY_PARAM_TITLE, title)
-                    .build()
-                    .toUri();
+    public Mono<OmdbResponseDTO> fetchByTitle(String title) {
+        URI uri = UriComponentsBuilder
+                .fromUriString(properties.getBaseUrl())
+                .queryParam(QUERY_PARAM_API_KEY, properties.getKey())
+                .queryParam(QUERY_PARAM_TITLE, title)
+                .build()
+                .toUri();
 
-            log.debug("OMDb request: title='{}'", title);
+        log.debug("OMDb request [title='{}']", title);
 
-            ResponseEntity<OmdbResponseDTO> response = restTemplate.getForEntity(uri, OmdbResponseDTO.class);
-            OmdbResponseDTO body = response.getBody();
-
-            if (!response.getStatusCode().is2xxSuccessful() || body == null) {
-                log.error("OMDb invalid response [status={}]", response.getStatusCode());
-                throw new OmdbException("OMDb invalid response");
-            }
-
-            // OMDb uses a logical "Response" field instead of HTTP status codes
-            if (!"True".equalsIgnoreCase(body.getResponse())) {
-                log.error("OMDb error response [error='{}']", body.getError());
-                throw new OmdbException("OMDb error response");
-            }
-
-            log.debug("OMDb success [title='{}', imdbId={}]", body.getTitle(), body.getImdbId());
-
-            return body;
-
-        } catch (RestClientException ex) {
-            log.error("OMDb communication failure [title='{}']", title, ex);
-            throw new OmdbException("OMDb communication failure", ex);
-        }
+        return webClient.get()
+                .uri(uri)
+                .retrieve()
+                .onStatus(
+                        status -> !status.is2xxSuccessful(),
+                        clientResponse -> clientResponse.bodyToMono(String.class)
+                                .then(Mono.defer(() -> {
+                                    log.error("OMDb HTTP error [status={}]", clientResponse.statusCode());
+                                    return Mono.error(new OmdbException("OMDb HTTP error"));
+                                }))
+                )
+                .bodyToMono(OmdbResponseDTO.class)
+                .switchIfEmpty(Mono.error(new OmdbException("OMDb empty response")))
+                .flatMap(dto -> {
+                    if (!"True".equalsIgnoreCase(dto.getResponse())) {
+                        log.warn("OMDb error response [error='{}']", dto.getError());
+                        return Mono.error(new OmdbException("OMDb error response"));
+                    }
+                    return Mono.just(dto);
+                })
+                .doOnSuccess(dto -> log.debug("OMDb success [title='{}', imdbId={}]", dto.getTitle(), dto.getImdbId()))
+                .onErrorMap(WebClientException.class, ex -> {
+                    log.error("OMDb communication failure [title='{}']", title, ex);
+                    return new OmdbException("OMDb communication failure", ex);
+                });
     }
 
 }

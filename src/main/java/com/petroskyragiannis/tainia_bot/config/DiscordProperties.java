@@ -9,7 +9,7 @@ import org.springframework.validation.annotation.Validated;
 import java.util.Set;
 
 /**
- * Configuration properties for the Discord bot integration.
+ * Configuration properties for the Discord bot.
  */
 @Validated
 @ConfigurationProperties(prefix = "discord.bot")

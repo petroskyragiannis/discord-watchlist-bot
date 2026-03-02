@@ -45,6 +45,10 @@ public class WatchlistService {
         try {
             OmdbResponseDTO omdbResponseDTO = omdbService.getByTitle(title);
 
+            if (omdbResponseDTO == null) {
+                return new WatchlistResult.NotFound();
+            }
+
             if (watchlistRepository.existsByGuildIdAndImdbId(guildId, omdbResponseDTO.getImdbId())) {
                 log.info("Watchlist item already exists [guildId={}, imdbId={}]", guildId, omdbResponseDTO.getImdbId());
                 return new WatchlistResult.AlreadyExists();
